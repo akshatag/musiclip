@@ -1,0 +1,211 @@
+version: '3.8'
+
+services:
+  # Service 1: MinIO - Object Storage for WAV files
+  minio:
+    image: minio/minio:latest
+    container_name: musiclip-blobstore
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console UI
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - musiclip-network
+
+  # MinIO initialization - creates bucket on startup
+  minio-init:
+    image: minio/mc:latest
+    container_name: musiclip-blobstore-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb myminio/${MINIO_BUCKET:-music-clips} --ignore-existing;
+      mc anonymous set download myminio/${MINIO_BUCKET:-music-clips};
+      echo 'MinIO bucket created successfully';
+      "
+    networks:
+      - musiclip-network
+
+  # Service 2: ChromaDB - Vector Database
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: musiclip-chromadb
+    ports:
+      - "8000:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ALLOW_RESET: "TRUE"  # Set to FALSE in production
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - ./chroma_db:/data
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "cat < /dev/null > /dev/tcp/localhost/8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - musiclip-network
+
+  # Service 3: Embedding Server - Generates embeddings from audio/text
+  embedding-server:
+    build:
+      context: ./services/embedding-server
+      dockerfile: Dockerfile
+    container_name: musiclip-embedding-server
+    ports:
+      - "8080:8080"
+    environment:
+      # Device configuration
+      DEVICE: ${DEVICE:-cpu}  # cpu, cuda, or mps
+      MODEL_NAME: "OpenMuQ/MuQ-MuLan-large"
+      MODEL_CACHE_DIR: /models
+      
+      # Server configuration
+      HOST: 0.0.0.0
+      PORT: 8080
+      LOG_LEVEL: info
+    volumes:
+      - model-cache:/models  # Cache downloaded models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Model loading takes time
+    networks:
+      - musiclip-network
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Service 4: Catalogue Builder - Fetches and processes music
+  catalogue-builder:
+    build:
+      context: ./services/catalogue-builder
+      dockerfile: Dockerfile
+    container_name: musiclip-catalogue-builder
+    environment:
+      # Apple Music API
+      APPLE_KEY_ID: ${APPLE_KEY_ID}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID}
+      APPLE_KEY_PATH: /secrets/apple_music_key.p8
+      
+      # MinIO configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-music-clips}
+      MINIO_SECURE: "false"
+      
+      # ChromaDB configuration
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      
+      # Embedding Server configuration
+      EMBEDDING_SERVER_URL: http://embedding-server:8080
+      
+      # Processing configuration
+      SAMPLE_RATE: 24000
+      STOREFRONT: us
+      LOG_LEVEL: info
+    volumes:
+      - ./services/catalogue-builder/AuthKey_TQ523NN89M.p8:/secrets/apple_music_key.p8:ro  # Mount Apple Music key
+    depends_on:
+      minio:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      embedding-server:
+        condition: service_healthy
+    networks:
+      - musiclip-network
+    # This service runs on-demand, not continuously
+    profiles:
+      - tools
+    stdin_open: true  # Keep stdin open for interactive shell
+    tty: true         # Allocate a pseudo-TTY
+    command: ["--interactive"]  # Default to interactive shell mode
+
+  # Optional Service: Query Client - Interactive query interface
+  query-client:
+    build:
+      context: ./services/query-client
+      dockerfile: Dockerfile
+    container_name: musiclip-query-client
+    ports:
+      - "8081:8081"
+    environment:
+      # ChromaDB configuration
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      
+      # Embedding Server configuration
+      EMBEDDING_SERVER_URL: http://embedding-server:8080
+      
+      # MinIO configuration (for fetching audio files)
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9001  # Public-facing endpoint for browser UI
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-music-clips}
+      MINIO_SECURE: "false"
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      embedding-server:
+        condition: service_healthy
+    networks:
+      - musiclip-network
+    stdin_open: true  # Keep stdin open for interactive shell
+    tty: true         # Allocate a pseudo-TTY
+
+  # Frontend Service - Web UI for music search
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: musiclip-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # API configuration
+      NEXT_PUBLIC_API_URL: http://localhost:8081
+    depends_on:
+      - query-client
+    networks:
+      - musiclip-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  musiclip-network:
+    driver: bridge
+    name: musiclip-network
+
+volumes:
+  minio-data:
+    name: musiclip-minio-data
+  model-cache:
+    name: musiclip-model-cache

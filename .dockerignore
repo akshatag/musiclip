@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+docker-compose.yml
+Dockerfile
+
+# Data directories (will be mounted as volumes)
+chroma_db/
+clips_wav/
+previews_wav/
+data/
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+
+# Model cache (will be in volume)
+models/
+.cache/
+
+# Apple Music private key (will be mounted as secret)
+*.p8
+
+# Documentation
+README.md
+*.md
