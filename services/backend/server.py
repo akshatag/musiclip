@@ -2,6 +2,7 @@
 Musiclip Server - FastAPI server for querying the Musiclip database
 """
 import os
+import sys
 from dotenv import load_dotenv
 load_dotenv()  # Load .env file if present
 
@@ -16,9 +17,12 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 import uvicorn
 
-# Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Logging - configure to use stdout for cloud platforms like Render
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
 
 # Configuration
 CHROMA_HOST = os.environ['CHROMA_HOST']  # e.g. api.trychroma.com
