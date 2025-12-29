@@ -206,6 +206,8 @@ async def query_by_text(request: TextQueryRequest):
     try:
         results = query_music(request.query, top_k=request.top_k)
         formatted_results = format_results(results)
+
+        logger.info(f"Query results: {formatted_results}")
         
         return QueryResponse(
             results=formatted_results,
