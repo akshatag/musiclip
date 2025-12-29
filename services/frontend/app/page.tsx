@@ -68,6 +68,8 @@ export default function Home() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    console.log('Query:', query);
+
     if (!query.trim()) {
       setError('Please enter a search query');
       return;
