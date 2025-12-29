@@ -85,7 +85,8 @@ export default function Home() {
     }
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      console.log('API URL:', apiUrl);
       const response = await fetch(`${apiUrl}/query/text`, {
         method: 'POST',
         headers: {
