@@ -2,6 +2,9 @@
 Musiclip Server - FastAPI server for querying the Musiclip database
 """
 import os
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file if present
+
 import logging
 import requests
 import chromadb
@@ -39,11 +42,11 @@ async def lifespan(app: FastAPI):
     client = chromadb.HttpClient(
         host=CHROMA_HOST,
         ssl=True,
-        headers={"x-chroma-token": CHROMA_API_KEY},
+        headers={"X-Chroma-Token": CHROMA_API_KEY},
         settings=Settings(
             chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
             chroma_client_auth_credentials=CHROMA_API_KEY,
-            chroma_auth_token_transport_header="x-chroma-token",
+            chroma_auth_token_transport_header="X-Chroma-Token",
         ),
         tenant=CHROMA_TENANT,
         database=CHROMA_DATABASE,
